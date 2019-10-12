@@ -3,20 +3,30 @@ library(data.table)
 library(DT)
 library(RColorBrewer)
 library(umap)
-library(reticulate)
 
-# Had to do this to set the bioconductor repo, and also installed MASS with
+# Have to do this to set the bioconductor repo before deploying!
+#setRepositories(addURLs = c(BioC = "https://bioconductor.org/packages/3.9/bioc"))  # 2 3 4 5
+#options(repos = c("CRAN" = "https://cran.rstudio.com/", 
+#                  "BioCsoft" = "https://bioconductor.org/packages/3.9/bioc", 
+#                  "BioCann" = "https://bioconductor.org/packages/3.9/data/annotation"))
+# getOption("repos")
+
+# On an older computer, had to install MASS with
 # devtools::install_version("MASS", "7.3-51.1")
-#setRepositories(addURLs = c(BioC = "https://bioconductor.org/packages/3.8/bioc"))
 
-#reticulate::virtualenv_create(envname = "python_environment", python = "python3")
-#reticulate::use_virtualenv("python_environment", required = TRUE)
-#reticulate::virtualenv_install("python_environment", packages = c('pandas','numpy'))
-#reticulate::use_virtualenv("python_environment", required = TRUE)
-#py_install('gsea_incontext')
-#reticulate::py_config()
-#print(reticulate::py_config())
-source_python('run_gsea_incontext.py')
+# View the app running locally at http://localhost:7445
+options(shiny.port = 7446, 
+        shiny.maxRequestSize=30*1024^2,        
+        rsconnect.max.bundle.size=3145728000)  # 3GB
+
+# Create virtualenv with required Python package if doesn't already exist
+#if (!'python35_env' %in% reticulate::virtualenv_list()){
+#  reticulate::virtualenv_create('python35_env', python = 'python3')
+#  reticulate::virtualenv_install('python35_env', c('gsea-incontext-notk'))
+#}
+#reticulate::use_virtualenv('python35_env', required = TRUE)
+#library(reticulate)
+#source_python('run_gsea_incontext.py')
 
 shinyServer(function(input, output) {
   
@@ -114,24 +124,25 @@ shinyServer(function(input, output) {
   # Get pre-computed UMAP data based on the platform selected
   # Just using the 2D ones for now, but could use 3D too in the future
   umap_data <- reactive({
-    if (filter_p() == 'GEO 442 (HGU133 Plus 2.0)'){
+    platform = filter_p()
+    if (platform == 'Powers 442 (HGU133 Plus 2.0)'){
       if (is.null(VALUES$EXPT_DATA$ORIG442$UMAP_2D)){
-        VALUES$EXPT_DATA$ORIG442$UMAP_2D <- readRDS('data/Rank_UMAPs/Orig442_ranks_UMAP.rds')
+        VALUES$EXPT_DATA$ORIG442$UMAP_2D <- read_UMAP_dropbox(platform)
       }
       dat = VALUES$EXPT_DATA$ORIG442$UMAP_2D$layout
-    } else if (filter_p() == 'CMap Build 01 (HGU133A)'){
+    } else if (platform == 'CMap Build 01 (HGU133A)'){
       if (is.null(VALUES$EXPT_DATA$CMAP01$UMAP_2D)){
-        VALUES$EXPT_DATA$CMAP01$UMAP_2D <- readRDS('data/Rank_UMAPs/CMap01_ranks_UMAP.rds')
+        VALUES$EXPT_DATA$CMAP01$UMAP_2D <- read_UMAP_dropbox(platform)
       }
       dat = VALUES$EXPT_DATA$CMAP01$UMAP_2D$layout
-    } else if (filter_p() == 'NCI-60 (HGU133A 2.0)'){
+    } else if (platform == 'NCI-60 (HGU133A 2.0)'){
       if (is.null(VALUES$EXPT_DATA$NCI60$UMAP_2D)){
-        VALUES$EXPT_DATA$NCI60$UMAP_2D <- readRDS('data/Rank_UMAPs/NCI-60_ranks_UMAP.rds')
+        VALUES$EXPT_DATA$NCI60$UMAP_2D <- read_UMAP_dropbox(platform)
       }
       dat = VALUES$EXPT_DATA$NCI60$UMAP_2D$layout
     } else {
       if (is.null(VALUES$EXPT_DATA$INTERSECTED$UMAP_2D)){
-        VALUES$EXPT_DATA$INTERSECTED$UMAP_2D <- readRDS('data/Rank_UMAPs/intersected_ranks_UMAP.rds')
+        VALUES$EXPT_DATA$INTERSECTED$UMAP_2D <- read_UMAP_dropbox(platform)
       }
       dat = VALUES$EXPT_DATA$INTERSECTED$UMAP_2D$layout
     }
@@ -141,12 +152,6 @@ shinyServer(function(input, output) {
     row.names(dat) = gsub('_gene', '', row.names(dat))
     names(dat) = c('V1', 'V2')
     return(list(dat = dat, annot = annot))
-  })
-  
-  # Save manually selected points to reactive values (this allows them to be reset)
-  observe({
-    VALUES$USER_INPUT$SELECTED_EXPTS <- event_data('plotly_selected', source = 'A')
-    # Output for event_data() is 4 columns: curveNumber, pointNumber, x, y
   })
   
   # If points were manually selected, highlight those, otherwise
@@ -298,6 +303,17 @@ shinyServer(function(input, output) {
           inherit = F,
           type = 'scatter', mode = 'markers'
         ) %>% layout(dragmode = 'select')
+    }
+    event_register(p, 'plotly_selected')
+  })
+  
+  # Save manually selected points to reactive values
+  get_highlighted <- reactive(event_data('plotly_selected', source = 'A'))
+  
+  observeEvent(get_highlighted(), {
+    if (!is.null(get_highlighted())){
+      VALUES$USER_INPUT$SELECTED_EXPTS <- event_data('plotly_selected', source = 'A')
+      # Output for event_data() is 4 columns: curveNumber, pointNumber, x, y
     }
   })
   
@@ -467,6 +483,21 @@ shinyServer(function(input, output) {
   # ----------------- LEFT SIDEBAR --------------------------------------------
   
   # Info modal
+  observeEvent(input$info_run, {
+    showModal(modalDialog(
+      title = 'Running GSEA-InContext',
+      'After selecting a subset of background experiments on the previous tab, use this tab to run the GSEA-InContext algorithm:',
+      HTML('<ul><li>Using the left sidebar menu, upload a .rnk format file for your experiment. You can find more information about the .rnk format '),
+      a('here', href = 'google.com'),
+      HTML('<li>Next, confirm that the background experiments listed in the left sidebar menu matched your selection from the previous tab. If not, go back to the "Define background set" tab, use the filters to select the desired background set, and click the "Save Background Set" button to save.</li>'),
+      HTML('<li>Using the dropdown menu on the left side of this tab, select a gene set collection for analysis.</li>'),
+      HTML('<li>Click "Run GSEA-InContext" to start the analysis using your uploaded experiment, the selected background set, and the selected gene set collection.</li></ul>'),
+      easyClose = TRUE,
+      footer = NULL
+    ))
+  })
+  
+  # Info modal
   observeEvent(input$info_k, {
     showModal(modalDialog(
       title = 'Upload & Compare',
@@ -482,6 +513,27 @@ shinyServer(function(input, output) {
       easyClose = TRUE,
       footer = NULL
     ))
+  })
+  
+  output$analysis_ui <- renderUI({
+    if (input$select_new == 'New'){
+      return({
+        fileInput('input_file', 'Upload new file')
+        h5('Other parameters')
+        selectInput('filter_gmt2', label = 'Gene set collection',
+                    selected = 'MSigDB: Hallmarks',
+                    choices = c(as.character(GMTS), 'All collections'))
+        p(textOutput('message_bg_to_use'), style='color:2196F3')
+        helpText('Go back to previous tabs to modify background set')
+        br()
+        actionButton('button_run_incontext', label = 'Run GSEA-InContext', icon = icon('angle-double-right'))
+      })
+    } else{
+      return({
+        textInput('analysis_id', label = 'Provide your analysis ID: ')
+        actionButton('button_lookup', 'Look-up analysis')
+      })
+    }
   })
   
   # Validate user input ranked file
@@ -532,6 +584,7 @@ shinyServer(function(input, output) {
       
       # Get background experiment ranks
       bg_expts = get_bg_expts()
+      # TODO change to Dropbox read
       all_rnks = readRDS('data/intersected_compiled_reranked_rnks.rds')
       all_rnks$Gene = NULL
       
@@ -559,6 +612,9 @@ shinyServer(function(input, output) {
       #rnk = "gsea_incontext_test_data/GSE5145_DEG_Expt1_Control_vs_Group1_gene.rnk"
       #gene_sets = "data/gene_sets/hallmarks.gmt"
       #background_csv = "gsea_incontext_test_data/MCF7_22_background_lists_permuted_x100.csv"
+      
+      # Generate Dropbox folder using unique analysis ID
+      analysis_id = initialize_analysis_dropbox(bg_expts)
       
       # Write out files whose paths will be passed to run_gsea_incontext()
       rnk = 'out/incontext_user_rnk.rnk'
@@ -590,7 +646,12 @@ shinyServer(function(input, output) {
       names(preranked_table) = c('Term', 'Preranked_qval')
       
       # Save data frame for later plotting and stuff
-      VALUES$DATA_FOR_DOWNLOAD$INCONTEXT_TABLE <- join(dat, preranked_table, type = 'full')
+      results_table = join(dat, preranked_table, type = 'full')
+      VALUES$DATA_FOR_DOWNLOAD$INCONTEXT_TABLE <- results_table
+      
+      # Save analysis in Dropbox
+      save_analysis_dropbox(analysis_id, user_ranks, results_table)
+    
     }
   })
   
@@ -730,7 +791,7 @@ shinyServer(function(input, output) {
   
   # Read in active .gmt file
   observeEvent(input$filter_gmt3, {
-    VALUES$USER_INPUT$GMT <- gmtPathways(as.character(GMT_PATHS[input$filter_gmt3]))
+    VALUES$USER_INPUT$GMT <- get_app_data_dropbox(GMT_PATHS[input$filter_gmt3])
   })
   
   # Calculate fgsea when the user inputs a file
@@ -767,7 +828,7 @@ shinyServer(function(input, output) {
     g = active_gmt3()
     umaps_list = VALUES$EXPT_DATA$INTERSECTED$NES_UMAPS
     if (!hasName(umaps_list, g)){
-      u = readRDS(as.character(UMAP_PATHS[g]))
+      u = get_app_data_dropbox(as.character(UMAP_PATHS[g]))
       VALUES$EXPT_DATA$INTERSECTED$NES_UMAPS[[length(VALUES$EXPT_DATA$INTERSECTED$NES_UMAPS)+1]] <- u
       names(VALUES$EXPT_DATA$INTERSECTED$NES_UMAPS)[length(VALUES$EXPT_DATA$INTERSECTED$NES_UMAPS)] <- g
     }

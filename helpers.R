@@ -7,14 +7,14 @@ library(umap)
 cols = brewer.pal(11, 'Spectral')
 
 # Master table of all experiment annotations
-ALL_ANNOT <- readRDS('data/All_expt_annotations.rds')
+ALL_ANNOT <- get_app_data_dropbox('All_expt_annotations.rds')
 ALL_DRUGS <- sort(unique(ALL_ANNOT$drug))
 ALL_CELLS <- sort(unique(ALL_ANNOT$cell_line))
 ALL_TISSUES <- sort(unique(ALL_ANNOT$tissue))
 
 # Read barplot data and original barplot ordering
-BARPLOT_DATA <- readRDS('data/All_nes_q05.rds')
-FIXED_BARPLOT_PATHWAYS <- readRDS('data/fixed_barplot_pathways.rds')
+BARPLOT_DATA <- get_app_data_dropbox('All_nes_q05.rds')
+FIXED_BARPLOT_PATHWAYS <- get_app_data_dropbox('fixed_barplot_pathways.rds')
 
 # Possible gene set collections
 GMTS <- c('MSigDB C1: positional gene sets', 
@@ -34,11 +34,11 @@ GMTS <- c('MSigDB C1: positional gene sets',
           'MSigDB: Hallmarks')
 names(GMTS) = sort(unique(BARPLOT_DATA$Collection))
 
-GMT_PATHS <- sort(list.files('data/gene_sets', full.names = T))
+GMT_PATHS <- sort(list_app_data_dropbox('gene_sets', full.names = T))
 names(GMT_PATHS) = c('All collections', as.character(GMTS))
 
-all_umap <- readRDS('data/NES_UMAPs/allCollections_UMAP.rds')
-UMAP_PATHS <- sort(list.files('data/NES_UMAPs', full.names = T))
+all_umap <- get_app_data_dropbox('NES_UMAPs/allCollections_UMAP.rds')
+UMAP_PATHS <- sort(list_app_data_dropbox('NES_UMAPs', full.names = T))
 names(UMAP_PATHS) = c('All collections', as.character(GMTS))
 
 # Colors for tissue UMAP
@@ -61,14 +61,14 @@ names(dataset_platforms) = c('GEO 442 (HGU133 Plus 2.0)',
                              'NCI-60 (HGU133A 2.0)')
 
 # NES and QVals
-gsea_nes = read.csv('data/Original_GSEAPreranked_hallmarks_NES.csv', 
-                    stringsAsFactors = F)
-gsea_qval = read.csv('data/Original_GSEAPreranked_hallmarks_qvals_ALL.csv',
-                     stringsAsFactors = F)
-incontext_nes = read.csv('data/Modified_GSEAPreranked_hallmarks_NES.csv',
-                         stringsAsFactors = F)
-incontext_qval = read.csv('data/Modified_GSEAPreranked_hallmarks_qvals_ALL.csv',
-                          stringsAsFactors = F)
+#gsea_nes = read.csv('data/Original_GSEAPreranked_hallmarks_NES.csv', 
+#                    stringsAsFactors = F)
+#gsea_qval = read.csv('data/Original_GSEAPreranked_hallmarks_qvals_ALL.csv',
+#                     stringsAsFactors = F)
+#incontext_nes = read.csv('data/Modified_GSEAPreranked_hallmarks_NES.csv',
+#                         stringsAsFactors = F)
+#incontext_qval = read.csv('data/Modified_GSEAPreranked_hallmarks_qvals_ALL.csv',
+#                          stringsAsFactors = F)
 
 makeValidRnk <- function(filepath){
   if (is.null(filepath)){

@@ -4,6 +4,7 @@ library(shinycssloaders)
 library(plotly)
 library(data.table)
 library(DT)
+source('dropbox.R')
 source('helpers.R')
 # Order or the sourcing is 1) ui imports, 2) helpers, 3) rest of ui, 4) server
 
@@ -24,6 +25,14 @@ ui <- fluidPage(
              
              # ------------------- TAB 1 -------------
              conditionalPanel(
+               'input.tab === "User Guide"',
+               h5('Contact'),
+               HTML('Rani Powers and James Costello<br>University of Colorado Anschutz Medical Campus<br>james.costello@cuanschutz.edu<br>'),
+               a('Costello Lab website', href='https://sites.google.com/site/jamesccostello4/')
+             ),
+             
+             # ------------------- TAB 2 -------------
+             conditionalPanel(
                'input.tab === "Define background set"',
                
                # for resetting this panel with server.button_clear
@@ -36,12 +45,12 @@ ui <- fluidPage(
                selectInput('filter_platform', label = 'Data set',
                            selected = 'All',
                            choices = c('All', 
-                                       'GEO 442 (HGU133 Plus 2.0)',
+                                       'Powers 442 (HGU133 Plus 2.0)',
                                        'CMap Build 01 (HGU133A)',
                                        'NCI-60 (HGU133A 2.0)')),
                selectizeInput('filter_drug', label = 'Drugs (leave blank to include all)',
-                           multiple = T,
-                           choices = ALL_DRUGS),
+                              multiple = T,
+                              choices = ALL_DRUGS),
                selectizeInput('filter_cell', label = 'Cell Lines (leave blank to include all)',
                               multiple = T,
                               choices = ALL_CELLS),
@@ -60,23 +69,18 @@ ui <- fluidPage(
                    style = 'margin-top: 8px;')
              ),
              
-             # ------------------- TAB 2 -------------
+             # ------------------- TAB 3 -------------
              conditionalPanel(
                'input.tab === "Run GSEA-InContext"',
-               h5('Select input file'),
-               span(textOutput('message_file_to_use'), style='color:2196F3'),
-               fileInput('input_file', 'Upload new file'),
-               h5('Other parameters'),
-               selectInput('filter_gmt2', label = 'Gene set collection',
-                           selected = 'MSigDB: Hallmarks',
-                           choices = c(as.character(GMTS), 'All collections')),
-               p(textOutput('message_bg_to_use'), style='color:2196F3'),
-               helpText('Go back to previous tabs to modify background set'),
-               br(),
-               actionButton('button_run_incontext', label = 'Run GSEA-InContext', icon = icon('angle-double-right'))
+               h5('Begin analysis'),
+               radioButtons('select_new', 'Start new analysis or look-up existing?',
+                            choices = c('New', 'Existing'), selected = 'New'),
+               uiOutput('analysis_ui'),
+               div(actionLink('info_run', 'Need help?', icon('info-circle')),
+                   style = 'margin-top: 8px;')
              ),
              
-             # ------------------- TAB 3 -------------
+             # ------------------- TAB 4 -------------
              conditionalPanel(
                'input.tab === "Explore pathways"',
                h5('Upload ranked list'),
@@ -90,13 +94,6 @@ ui <- fluidPage(
                numericInput('k', 'Select k neighbors', value = 30, min = 1, max = 5717),
                checkboxInput('fix_barplot3', 'Fix barplot ordering based on full data set'),
                actionLink('info_k', 'Need help?', icon('info-circle'))
-             ),
-             
-             # ------------------- TAB 4 -------------
-             conditionalPanel(
-               'input.tab === "User Guide"',
-               h5('References'),
-               h6('Powers, et al. GSEA-InContext: identifying novel and common patterns in expression experiments. Bioinformatics, Volume 34, Issue 13, 1 July 2018, Pages i555–i564')
              )
           ),
              style="overflow-x: scroll; overflow-y: scroll"),
@@ -107,6 +104,25 @@ ui <- fluidPage(
              id = 'tab',
              
              # ------------------- TAB 1 -------------
+             tabPanel('User Guide',
+                      h5('Welcome!'),
+                      strong('About the GSEA-InContext Explorer tool'),
+                      HTML('<br>This tool allow users to explore a compendium of <i>in vitro</i> gene expression experiments and run the GSEA-InContext algorithm.'),
+                      h5('Instructions'),
+                      strong('1. Define background set'),
+                      br(),
+                      'Use the filters on the "Define background set tab" to select a relevant subset of experiments. As filter criteria are added, the barplot on the right side will automatically update to show the positively and negatively enriched gene sets in the selected experiments. Once you are satisfied with the selected set of background experiments, click the "Save Background Set" button to save the selected experiments for use in the GSEA-InContext algorithm.',
+                      br(),
+                      strong('2. Run GSEA-InContext'),
+                      br(),
+                      'Upload your differential expression results as a .rnk format file. Confirm that the selected background experiments are correct, and click the "Run GSEA-InContext" button to begin analysis.',
+                      br(),
+                      strong('3. Explore Pathway similarity'),
+                      br(),
+                      'On the "Explore pathway similarity" tab, you can upload an experiment in a .rnk format file and visualize how it compares to other experiments in the compendium.'
+             ),
+             
+             # ------------------- TAB 2 -------------
              tabPanel('Define background set',
                       br(),
                       fluidRow(
@@ -124,7 +140,7 @@ ui <- fluidPage(
                       verbatimTextOutput('message_top_pathways')
              ),
              
-             # ------------------- TAB 2 -------------
+             # ------------------- TAB 3 -------------
              tabPanel('Run GSEA-InContext',
                       br(),
                       fluidRow(
@@ -138,7 +154,7 @@ ui <- fluidPage(
                       )
              ),
              
-             # ------------------- TAB 3 -------------
+             # ------------------- TAB 4 -------------
              tabPanel('Explore pathways',
                       br(),
                       fluidRow(
@@ -154,18 +170,6 @@ ui <- fluidPage(
                       br(),
                       verbatimTextOutput('message_top_pathways3')
                       #verbatimTextOutput('message_umap_genes')
-             ),
-             
-             # ------------------- TAB 4 -------------
-             tabPanel('User Guide',
-                      h5('About the GSEA-InContext Explorer tool'),
-                      'Use the tabs at the top of the page to navigate the tool. In general, tabs are intended to be navigated left to right.',
-                      'The overall goals of this tool are to allow users to 1) explore the compendium of gene expression experiments curated',
-                      'and 2) run GSEA-InContext.',
-                      h6('Instructions'),
-                      HTML('<ul><li>Background data explorer</li><li>Upload and compare</li><li>Run GSEA-InContext</li></ul>'),
-                      h6('About the data sets'),
-                      HTML('<ul><li>Original 442</li><li>CMap Build 01</li><li>NCI-60</li></ul>')
              )
          )
       )
@@ -180,6 +184,13 @@ ui <- fluidPage(
              
              # ------------------- TAB 1 -------------
              conditionalPanel(
+               'input.tab === "User Guide"',
+               h5('References'),
+               'Powers, et al. GSEA-InContext: identifying novel and common patterns in expression experiments. Bioinformatics, Volume 34, Issue 13, 1 July 2018, Pages i555–i564'
+             ),
+             
+             # ------------------- TAB 2 -------------
+             conditionalPanel(
                'input.tab === "Define background set"',
                h5(span(textOutput('message_n_rnks_selected'), style='color:#2196F3')),
                helpText('Add additional filter above, if desired, then click below to save these experiments as your background set'),
@@ -191,14 +202,14 @@ ui <- fluidPage(
                downloadButton('download_nes_selected', 'Download GSEA results')
              ),
              
-             # ------------------- TAB 2 -------------
+             # ------------------- TAB 3 -------------
              conditionalPanel(
                'input.tab === "Run GSEA-InContext"',
                downloadButton('download_gseaincontext', 'Download GSEA-InContext results'),
                helpText('Download the table shown to the right')
              ),
              
-             # ------------------- TAB 3 -------------
+             # ------------------- TAB 4 -------------
              conditionalPanel(
                'input.tab === "Explore pathways"',
              #  h5(span(textOutput('message_neighbors_selected'), style="color:#2196F3")),
@@ -207,14 +218,6 @@ ui <- fluidPage(
                #span(textOutput('message_saved_neighbors_selected'), style='color:#2196F3'),
                br(),
                downloadButton('download_annotations_selected3', 'Download annotation file')
-             ),
-             
-             # ------------------- TAB 4 -------------
-             conditionalPanel(
-               'input.tab === "User Guide"',
-               h5('Contact'),
-               HTML('Rani Powers and James Costello, PhD<br>University of Colorado Anschutz Medical Campus<br>Department of Pharmacology<br>Aurora, CO 80045<br>'),
-               a('Costello Lab website', href='https://sites.google.com/site/jamesccostello4/')
              )
         )
     ),
